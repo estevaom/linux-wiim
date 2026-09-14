@@ -1,0 +1,16 @@
+[Unit]
+Description=linux-wiim - control WiiM streamers with Plex and Tidal
+After=network-online.target
+
+[Service]
+# %h is your home directory. Change both paths if you cloned somewhere else.
+WorkingDirectory=%h/linux-wiim
+ExecStart=%h/linux-wiim/.venv/bin/python app.py
+# Only needed when auto-detection picks the wrong address (see README):
+#Environment=PLEX_URL=http://127.0.0.1:32400
+#Environment=PLEX_LAN_URL=http://<plex-server-lan-ip>:32400
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

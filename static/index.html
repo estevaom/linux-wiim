@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f0f12">
+<title>WiiM Remote</title>
+<link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+<link rel="apple-touch-icon" href="/static/icon.png">
+<meta name="apple-mobile-web-app-title" content="WiiM Remote">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+:root {
+  --bg: #0f0f12; --panel: #17171c; --panel-2: #1f1f26; --line: #2a2a33;
+  --text: #ecebf0; --muted: #9a98a6; --accent: #e6a23c; --plex: #e5a00d; --tidal: #33d6c6;
+  --radius: 14px;
+}
+@media (prefers-color-scheme: light) {
+  :root { --bg: #f6f5f2; --panel: #ffffff; --panel-2: #efeee9; --line: #e0ded7;
+          --text: #1c1b20; --muted: #6b6975; --accent: #b87412; --plex: #b37b00; --tidal: #0e9c8f; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+       font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; padding-inline: 16px; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+input, select { font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line);
+                border-radius: 10px; padding: 9px 12px; min-width: 0; }
+.wrap { max-width: 1100px; margin: 0 auto; padding-block: 16px 140px; }
+
+header { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+header h1 { font-size: 17px; margin: 0 auto 0 0; letter-spacing: .02em; }
+
+/* now playing */
+.now { display: grid; grid-template-columns: 200px 1fr; gap: 20px; background: var(--panel);
+       border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 20px; }
+.now .art { width: 200px; aspect-ratio: 1; border-radius: 10px; background: var(--panel-2) center/cover; max-width: 100%; }
+.now .meta { display: flex; flex-direction: column; justify-content: center; min-width: 0; gap: 4px; }
+.now .title { font-size: 22px; font-weight: 650; overflow-wrap: anywhere; }
+.now .sub { color: var(--muted); overflow-wrap: anywhere; }
+.badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+         padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); width: fit-content; }
+.badge.Plex { color: var(--plex); border-color: var(--plex); }
+.badge.Tidal { color: var(--tidal); border-color: var(--tidal); }
+.progress { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-variant-numeric: tabular-nums;
+            font-size: 12px; color: var(--muted); }
+.progress input { flex: 1; padding: 0; accent-color: var(--accent); background: none; border: 0; }
+.transport { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.transport button { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; }
+.transport button:hover { background: var(--panel-2); }
+.transport .play { background: var(--accent); color: #111; width: 52px; height: 52px; }
+.transport .play:hover { background: var(--accent); filter: brightness(1.1); }
+.transport svg { width: 22px; height: 22px; fill: currentColor; }
+.vol { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--muted); min-width: 160px; flex: 0 1 220px; }
+.vol input { flex: 1; accent-color: var(--accent); padding: 0; background: none; border: 0; }
+
+/* tabs + search */
+.bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.tabs { display: flex; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
+.tabs button { padding: 7px 14px; border-radius: 9px; color: var(--muted); font-weight: 600; }
+.tabs button.on { background: var(--panel-2); color: var(--text); }
+.bar input[type=search] { flex: 1 1 220px; }
+.crumbs { color: var(--muted); margin: 0 0 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.crumbs button { color: var(--accent); }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
+.card { text-align: left; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.card .cover { width: 100%; aspect-ratio: 1; border-radius: 10px; background: var(--panel-2) center/cover; }
+.card:hover .cover { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card .t { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .a { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 22px 0 10px; }
+
+.album-head { display: flex; gap: 18px; align-items: end; margin-bottom: 14px; flex-wrap: wrap; }
+.album-head .cover { width: 160px; aspect-ratio: 1; border-radius: 10px; background: var(--panel-2) center/cover; max-width: 100%; }
+.album-head .t { font-size: 22px; font-weight: 700; }
+.album-head button.go { margin-top: 10px; background: var(--accent); color: #111; padding: 8px 16px; border-radius: 99px; font-weight: 700; }
+.tracks { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.track { display: grid; grid-template-columns: 36px 1fr auto; gap: 10px; width: 100%; text-align: left;
+         padding: 10px 14px; border-top: 1px solid var(--line); align-items: center; }
+.track:first-child { border-top: 0; }
+.track:hover { background: var(--panel-2); }
+.track.playing { color: var(--accent); }
+.track .n, .track .d { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+.track .tt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.track .ta { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.empty, .err { color: var(--muted); padding: 30px 0; text-align: center; }
+.err { color: #e5676b; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--panel-2);
+         border: 1px solid var(--line); padding: 10px 16px; border-radius: 12px; max-width: calc(100% - 32px); }
+
+@media (max-width: 640px) {
+  .now { grid-template-columns: 1fr; }
+  .now .art { width: 100%; max-width: 320px; margin: 0 auto; }
+  .vol { margin-left: 0; flex-basis: 100%; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>WiiM Remote</h1>
+    <select id="device" aria-label="Device"></select>
+  </header>
+
+  <section class="now" id="now">
+    <div class="art" id="np-art"></div>
+    <div class="meta">
+      <span class="badge" id="np-source"></span>
+      <div class="title" id="np-title">Nothing playing</div>
+      <div class="sub" id="np-sub"></div>
+      <div class="progress">
+        <span id="np-pos">0:00</span>
+        <input type="range" id="np-seek" min="0" max="1" value="0" aria-label="Seek">
+        <span id="np-dur">0:00</span>
+      </div>
+      <div class="transport">
+        <button id="b-prev" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+        <button id="b-play" class="play" aria-label="Play or pause"><svg viewBox="0 0 24 24" id="i-play"><path d="M8 5v14l11-7z"/></svg></button>
+        <button id="b-next" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></button>
+        <div class="vol"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4z"/></svg>
+          <input type="range" id="np-vol" min="0" max="100" aria-label="Volume"><span id="np-vol-n"></span></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="bar">
+    <div class="tabs" role="tablist">
+      <button data-src="plex" class="on">Plex</button>
+      <button data-src="tidal">Tidal</button>
+    </div>
+    <input type="search" id="q" placeholder="Search Plex…" autocomplete="off">
+  </div>
+  <div id="view"></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const state = { ip: null, src: 'plex', section: null, np: null, npAt: 0, playingTitle: '' };
+const PLAY = '<path d="M8 5v14l11-7z"/>', PAUSE = '<path d="M6 5h4v14H6zm8 0h4v14h-4z"/>';
+
+const cache = new Map();   // browse responses, so going back doesn't refetch the album grid
+async function api(path, body) {
+  const cacheable = !body && /^\/api\/(plex|tidal)\//.test(path);
+  const hit = cacheable && cache.get(path);
+  if (hit && Date.now() - hit.at < 5 * 60e3) return hit.data;
+  const r = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  if (cacheable) cache.set(path, { at: Date.now(), data });
+  return data;
+}
+function toast(msg) {
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  document.body.append(t); setTimeout(() => t.remove(), 3500);
+}
+const fmt = s => { s = Math.max(0, Math.floor(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const cover = (src, thumb, size = 400) => !thumb ? '' : src === 'plex' ? `/api/plex/art?size=${size}&thumb=${encodeURIComponent(thumb)}` : thumb;
+
+/* ---------- devices + now playing ---------- */
+async function loadDevices(refresh) {
+  const devs = await api('/api/devices' + (refresh ? '?refresh=1' : ''));
+  const sel = $('#device');
+  sel.innerHTML = devs.map(d => `<option value="${d.ip}">${esc(d.name)}</option>`).join('');
+  const saved = localGet('ip');
+  state.ip = devs.find(d => d.ip === saved) ? saved : devs[0]?.ip;
+  if (state.ip) sel.value = state.ip;
+  if (!devs.length) $('#np-title').textContent = 'No WiiM found on the network';
+}
+$('#device').onchange = e => { state.ip = e.target.value; localSet('ip', state.ip); pollNow(); };
+
+let seeking = false, volDrag = false, lastArt = '';
+async function pollNow() {
+  if (!state.ip) return;
+  try {
+    const np = await api('/api/now?ip=' + state.ip);
+    state.np = np; state.npAt = performance.now();
+    const playing = np.state === 'PLAYING';
+    $('#np-title').textContent = np.title || (np.state === 'STOPPED' ? 'Nothing playing' : '—');
+    $('#np-sub').textContent = [np.artist, np.album].filter(Boolean).join(' · ');
+    const src = $('#np-source'); src.textContent = np.source || ''; src.className = 'badge ' + (np.source || '');
+    src.hidden = !np.source;
+    if (np.art !== lastArt) { $('#np-art').style.backgroundImage = np.art ? `url("${np.art}")` : ''; lastArt = np.art; }
+    const link = np.album_link;
+    $('#np-art').style.cursor = link ? 'pointer' : '';
+    $('#np-art').title = link ? `Open ${np.album || 'album'}` : '';
+    $('#i-play').innerHTML = playing ? PAUSE : PLAY;
+    if (!volDrag) { $('#np-vol').value = np.volume; $('#np-vol-n').textContent = np.volume; }
+    state.playingTitle = np.title;
+    document.querySelectorAll('.track').forEach(el => el.classList.toggle('playing', el.dataset.title === np.title));
+    tick();
+  } catch (e) { /* device briefly unreachable; next poll retries */ }
+}
+function tick() {
+  const np = state.np; if (!np || seeking) return;
+  const elapsed = np.state === 'PLAYING' ? (performance.now() - state.npAt) / 1000 : 0;
+  const pos = Math.min(np.duration || 0, np.position + elapsed);
+  $('#np-seek').max = np.duration || 1; $('#np-seek').value = pos;
+  $('#np-pos').textContent = fmt(pos); $('#np-dur').textContent = fmt(np.duration);
+}
+setInterval(pollNow, 2000); setInterval(tick, 500);
+
+const control = (action, value) => api('/api/control', { ip: state.ip, action, value }).then(() => setTimeout(pollNow, 400)).catch(e => toast(e.message));
+$('#np-art').onclick = () => {
+  const link = state.np?.album_link;
+  if (!link) return;
+  const cur = history.state || {};
+  if (cur.view === 'album' && cur.src === link.src && String(cur.id) === link.id) return;   // already there
+  navigate({ view: 'album', src: link.src, id: link.id });
+};
+$('#b-play').onclick = () => control('toggle');
+$('#b-next').onclick = () => control('next');
+$('#b-prev').onclick = () => control('prev');
+$('#np-seek').oninput = e => { seeking = true; $('#np-pos').textContent = fmt(e.target.value); };
+$('#np-seek').onchange = e => { seeking = false; control('seek', +e.target.value); };
+$('#np-vol').oninput = e => { volDrag = true; $('#np-vol-n').textContent = e.target.value; };
+$('#np-vol').onchange = e => { volDrag = false; control('volume', +e.target.value); };
+
+/* ---------- navigation ----------
+   Every page is a real history entry, so the mouse back button, Alt+Left and the
+   phone's back gesture all work. Each entry remembers its scroll position. */
+history.scrollRestoration = 'manual';
+let depth = 0;   // how many app pages sit above the first one
+
+function render(route) {
+  state.src = route.src || state.src;
+  syncTabs();
+  if (route.view === 'album') return openAlbum(route.src, route.id);
+  if (route.view === 'artist') return openArtist(route.src, route.id);
+  if (route.view === 'search') { $('#q').value = route.q; return search(route.q); }
+  $('#q').value = '';
+  return home();
+}
+async function navigate(route, { replace = false } = {}) {
+  if (replace) {
+    history.replaceState({ ...route, depth }, '');
+  } else {
+    history.replaceState({ ...history.state, scroll: window.scrollY }, '');
+    depth++;
+    history.pushState({ ...route, depth }, '');
+  }
+  await render(route);
+  if (!replace) window.scrollTo(0, 0);
+}
+function goBack() {
+  if (depth > 0) history.back();
+  else navigate({ view: 'home', src: state.src }, { replace: true });
+}
+window.addEventListener('popstate', async e => {
+  const route = e.state || { view: 'home', src: state.src };
+  depth = route.depth || 0;
+  await render(route);
+  window.scrollTo(0, route.scroll || 0);
+});
+
+/* ---------- browsing ---------- */
+const view = $('#view');
+function show(html) { view.innerHTML = html; }
+function loading() { show('<div class="empty">Loading…</div>'); }
+function fail(e) { show(`<div class="err">${esc(e.message)}</div>`); }
+
+function albumGrid(src, albums) {
+  if (!albums.length) return '<div class="empty">Nothing here</div>';
+  return '<div class="grid">' + albums.map(a => `
+    <button class="card" data-album="${a.id}" data-src="${src}">
+      <div class="cover" style="background-image:url('${cover(src, a.thumb)}')"></div>
+      <div class="t" title="${esc(a.title)}">${esc(a.title)}</div>
+      <div class="a">${esc(a.artist)}${a.year ? ' · ' + a.year : ''}</div>
+    </button>`).join('') + '</div>';
+}
+function artistGrid(src, artists) {
+  return '<div class="grid">' + artists.map(a => `
+    <button class="card" data-artist="${a.id}" data-src="${src}">
+      <div class="cover" style="border-radius:50%;background-image:url('${cover(src, a.thumb)}')"></div>
+      <div class="t">${esc(a.title)}</div>
+    </button>`).join('') + '</div>';
+}
+function trackList(src, tracks, opts = {}) {
+  const ids = JSON.stringify(tracks.map(t => t.id));
+  return `<div class="tracks" data-ids='${ids}' data-src="${src}">` + tracks.map((t, i) => `
+    <button class="track${t.title === state.playingTitle ? ' playing' : ''}" data-index="${i}" data-title="${esc(t.title)}">
+      <span class="n">${opts.showArt ? '' : (t.index ?? i + 1)}</span>
+      <span style="min-width:0"><div class="tt">${esc(t.title)}</div>${opts.showAlbum || (t.artist && opts.showArtist) ? `<div class="ta">${esc([t.artist, opts.showAlbum ? t.album : ''].filter(Boolean).join(' · '))}</div>` : ''}</span>
+      <span class="d">${fmt(t.duration)}</span>
+    </button>`).join('') + '</div>';
+}
+
+view.addEventListener('click', async e => {
+  const card = e.target.closest('.card'), track = e.target.closest('.track'), go = e.target.closest('.go'), back = e.target.closest('[data-back]');
+  if (back) return goBack();
+  if (card?.dataset.album) return navigate({ view: 'album', src: card.dataset.src, id: card.dataset.album });
+  if (card?.dataset.artist) return navigate({ view: 'artist', src: card.dataset.src, id: card.dataset.artist });
+  if (track || go) {
+    const list = (track || go).closest('[data-ids]') || view.querySelector('[data-ids]');
+    const ids = JSON.parse(list.dataset.ids), index = track ? +track.dataset.index : 0;
+    try { await api('/api/play', { ip: state.ip, source: list.dataset.src, ids, index }); setTimeout(pollNow, 800); }
+    catch (err) { toast('Could not play: ' + err.message); }
+  }
+});
+const backLink = label => `<p class="crumbs"><button data-back>← Back</button> ${esc(label || '')}</p>`;
+
+async function openAlbum(src, id) {
+  loading();
+  try {
+    const tracks = await api(`/api/${src}/album/${id}`);
+    const t0 = tracks[0] || {};
+    show(backLink() + `<div class="album-head"><div class="cover" style="background-image:url('${cover(src, t0.thumb, 600)}')"></div>
+      <div><div class="badge ${src === 'plex' ? 'Plex' : 'Tidal'}">${src}</div><div class="t">${esc(t0.album)}</div>
+      <div class="sub" style="color:var(--muted)">${esc(t0.artist)} · ${tracks.length} tracks</div>
+      <button class="go">Play album</button></div></div>` + trackList(src, tracks, { showArtist: true }));
+  } catch (e) { fail(e); }
+}
+async function openArtist(src, id) {
+  loading();
+  try { show(backLink() + albumGrid(src, await api(`/api/${src}/artist/${id}`))); } catch (e) { fail(e); }
+}
+
+async function home() {
+  loading();
+  try {
+    if (state.src === 'plex') {
+      if (!state.section) state.section = (await api('/api/plex/sections'))[0]?.id;
+      if (!state.section) return show('<div class="empty">No music library in Plex</div>');
+      const [recent, all] = await Promise.all([
+        api(`/api/plex/albums?section=${state.section}&sort=addedAt:desc`),
+        api(`/api/plex/albums?section=${state.section}`)]);
+      show('<h2>Recently added</h2>' + albumGrid('plex', recent.slice(0, 12)) + '<h2>All albums</h2>' + albumGrid('plex', all));
+    } else {
+      show('<h2>My albums</h2>' + albumGrid('tidal', await api('/api/tidal/favorites')));
+    }
+  } catch (e) { fail(e); }
+}
+
+let searchTimer;
+$('#q').oninput = e => {
+  clearTimeout(searchTimer);
+  const q = e.target.value.trim();
+  searchTimer = setTimeout(() => {
+    const onSearch = history.state?.view === 'search';
+    if (q) navigate({ view: 'search', src: state.src, q }, { replace: onSearch });   // one history entry per search, not per keystroke
+    else if (onSearch) goBack();
+  }, 350);
+};
+async function search(q) {
+  loading();
+  const src = state.src;
+  try {
+    const r = await api(`/api/${src}/search?q=${encodeURIComponent(q)}`);
+    let html = '';
+    if (r.tracks.length) html += '<h2>Tracks</h2>' + trackList(src, r.tracks.slice(0, 10), { showAlbum: true });
+    if (r.albums.length) html += '<h2>Albums</h2>' + albumGrid(src, r.albums);
+    if (r.artists.length) html += '<h2>Artists</h2>' + artistGrid(src, r.artists.slice(0, 12));
+    show(html || '<div class="empty">No results</div>');
+  } catch (e) { fail(e); }
+}
+
+function syncTabs() {
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.src === state.src));
+  const on = document.querySelector('.tabs button.on');
+  $('#q').placeholder = `Search ${on ? on.textContent : ''}…`;
+}
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  if (b.dataset.src === state.src && history.state?.view === 'home') return;
+  localSet('src', b.dataset.src);
+  const q = $('#q').value.trim();
+  navigate(q ? { view: 'search', src: b.dataset.src, q } : { view: 'home', src: b.dataset.src });
+});
+
+function localGet(k) { try { return localStorage.getItem('wiim-' + k); } catch { return null; } }
+function localSet(k, v) { try { localStorage.setItem('wiim-' + k, v); } catch {} }
+
+(async () => {
+  const start = history.state || { view: 'home', src: localGet('src') || 'plex', depth: 0 };
+  depth = start.depth || 0;
+  history.replaceState(start, '');
+  render(start).then(() => window.scrollTo(0, start.scroll || 0));
+  await loadDevices();
+  pollNow();
+})();
+</script>
+</body>
+</html>
