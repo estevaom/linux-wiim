@@ -4,6 +4,7 @@ Run: .venv/bin/python app.py  (serves http://0.0.0.0:8765)
 Tokens stay in this process. The browser gets artwork through /api/art proxies,
 never a URL with a Plex token in it.
 """
+import json
 import os
 import re
 import subprocess
@@ -223,6 +224,7 @@ def mpris_control(action, value=None):
 # Chromium derives an app window's class from its URL and ignores --class, so this
 # is what a window opened on /mini ends up as. The Hyprland rule matches it too.
 MINI_CLASS = "chrome-127.0.0.1__mini-Default"
+FULL_CLASS = "chrome-127.0.0.1__-Default"
 
 
 def raise_window():
@@ -252,8 +254,34 @@ def tray_tooltip():
     return f"{line}\n{_devices[np['ip']].name}" if np["ip"] in _devices else line
 
 
+def close_windows(*classes):
+    """Close our own windows, addressed individually.
+
+    Matching on class alone proved unreliable when two closes were dispatched
+    back to back; an address names exactly one window. Never match on title:
+    Claude Code renames its terminal, and a title match once closed it.
+    """
+    try:
+        clients = json.loads(subprocess.run(["hyprctl", "clients", "-j"],
+                                            capture_output=True, text=True, timeout=5).stdout)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return
+    for c in clients:
+        if c.get("class") in classes:
+            subprocess.run(["hyprctl", "dispatch", f'hl.dsp.window.close("address:{c["address"]}")'],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(0.2)
+
+
 def quit_app():
-    """Tray → Quit. Exiting cleanly keeps systemd from restarting it (Restart=on-failure)."""
+    """Tray → Quit: close both windows, then exit.
+
+    The pages are separate browser windows, so quitting the server alone would
+    leave them up showing a dead app. Exiting cleanly keeps systemd from
+    restarting it (Restart=on-failure).
+    """
+    close_windows(MINI_CLASS, FULL_CLASS)
+    time.sleep(0.5)
     os._exit(0)
 
 
