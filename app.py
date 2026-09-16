@@ -199,7 +199,7 @@ def mpris_device():
     if not _devices:
         refresh_devices()
     order = ([_last_device] if _last_device in _devices else []) + [ip for ip in _devices if ip != _last_device]
-    fallback = None
+    paused = stopped = None
     for ip in order:
         try:
             np = now_for(ip)
@@ -208,10 +208,14 @@ def mpris_device():
         if np["state"] in ("PLAYING", "TRANSITIONING"):
             _mpris_ip = ip
             return np
-        if fallback is None and np["title"]:
-            fallback = np
-    _mpris_ip = fallback["ip"] if fallback else None
-    return fallback
+        # A paused device still has a track to resume; a stopped one is the last resort.
+        if np["state"] == "PAUSED_PLAYBACK" and paused is None:
+            paused = np
+        elif stopped is None and np["title"]:
+            stopped = np
+    best = paused or stopped
+    _mpris_ip = best["ip"] if best else None
+    return best
 
 
 def mpris_control(action, value=None):
@@ -331,8 +335,7 @@ def devices():
 @app.get("/api/now")
 def now():
     ip = request.args["ip"]
-    np = now_for(ip)
-    set_last_device(ip)
+    np = now_for(ip)                 # polling a device doesn't make it the one the keys follow
     np.pop("uri")
     if np["art"]:
         np["art"] = f"/api/art/now?ip={ip}&k={abs(hash(np['art'])) % 10**8}"
