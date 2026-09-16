@@ -15,6 +15,10 @@ music from a Plex server or Tidal on it.
 - **Albums** play in order through a queue kept by the server.
 - **Navigation:** every page is a browser history entry, so the mouse back button
   and the phone's back gesture work.
+- **Media keys:** the playing WiiM is published as an MPRIS player, so the
+  keyboard's play/pause, next and previous control it, and the desktop shows the
+  track and artwork. The name is claimed only while a device has a track, so an
+  idle WiiM Remote doesn't take the keys from other players.
 
 ## How it works
 

@@ -5,6 +5,7 @@ Tokens stay in this process. The browser gets artwork through /api/art proxies,
 never a URL with a Plex token in it.
 """
 import re
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -23,6 +24,24 @@ _devices = {}
 _plex = None
 _tidal = None
 _lock = threading.Lock()
+
+# The device last used from the web UI. The media keys follow it when nothing is
+# playing, and it is kept on disk so a restart doesn't forget which WiiM you're on.
+LAST_DEVICE_FILE = CONFIG / "last-device"
+try:
+    _last_device = LAST_DEVICE_FILE.read_text().strip() or None
+except OSError:
+    _last_device = None
+
+
+def set_last_device(ip):
+    global _last_device
+    if ip and ip != _last_device:
+        _last_device = ip
+        try:
+            LAST_DEVICE_FILE.write_text(ip)
+        except OSError:
+            pass
 
 
 def plex():
@@ -145,6 +164,67 @@ def plex_album_link(title, album, art):
     return link
 
 
+def now_for(ip):
+    """Everything known about one device's playback. Shared by /api/now and MPRIS."""
+    np = device(ip).now_playing()
+    np["ip"] = ip
+    host = urlparse(np["uri"]).netloc
+    if ":32400" in host:
+        np["source"] = "Plex"
+    elif "tidal" in host or "tidal" in np["source"].lower():
+        np["source"] = "Tidal"
+
+    q = _queues.get(ip)
+    np["queue"] = {"source": q.source, "index": q.index, "length": len(q.ids)} if q else None
+    np["album_link"] = None
+    if q and q.album_id and urlparse(np["uri"]).path == q.path:
+        np["album_link"] = {"src": q.source, "id": str(q.album_id)}
+    elif np["source"] == "Plex" and np["title"]:
+        np["album_link"] = plex_album_link(np["title"], np["album"], np["art"])
+    return np
+
+
+# --- media keys -----------------------------------------------------------------
+# The desktop sends media keys to whichever MPRIS player is playing, so the WiiM is
+# published as one while it has a track. See mpris.py.
+
+_mpris_ip = None
+
+
+def mpris_device():
+    """The device the media keys should drive: the last one used here, else one that's playing."""
+    global _mpris_ip
+    if not _devices:
+        refresh_devices()
+    order = ([_last_device] if _last_device in _devices else []) + [ip for ip in _devices if ip != _last_device]
+    fallback = None
+    for ip in order:
+        try:
+            np = now_for(ip)
+        except Exception:
+            continue
+        if np["state"] in ("PLAYING", "TRANSITIONING"):
+            _mpris_ip = ip
+            return np
+        if fallback is None and np["title"]:
+            fallback = np
+    _mpris_ip = fallback["ip"] if fallback else None
+    return fallback
+
+
+def mpris_control(action, value=None):
+    """Act on the device the bridge is mirroring; no extra polling, so keys stay snappy."""
+    ip = _mpris_ip or (_last_device if _last_device in _devices else None) or next(iter(_devices), None)
+    if ip:
+        do_control(ip, action, value)
+
+
+def raise_window():
+    """The desktop's "open the player" action: focus the web app, or start it."""
+    subprocess.Popen(["omarchy-launch-or-focus-webapp", "WiiM Remote", f"http://127.0.0.1:{PORT}"],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 # --- pages ------------------------------------------------------------------------
 
 @app.get("/")
@@ -167,22 +247,9 @@ def devices():
 @app.get("/api/now")
 def now():
     ip = request.args["ip"]
-    np = device(ip).now_playing()
-    uri = np.pop("uri")
-    host = urlparse(uri).netloc
-    if ":32400" in host:
-        np["source"] = "Plex"
-    elif "tidal" in host or "tidal" in np["source"].lower():
-        np["source"] = "Tidal"
-
-    q = _queues.get(ip)
-    np["queue"] = {"source": q.source, "index": q.index, "length": len(q.ids)} if q else None
-    np["album_link"] = None
-    if q and q.album_id and urlparse(uri).path == q.path:
-        np["album_link"] = {"src": q.source, "id": str(q.album_id)}
-    elif np["source"] == "Plex" and np["title"]:
-        np["album_link"] = plex_album_link(np["title"], np["album"], np["art"])
-
+    np = now_for(ip)
+    set_last_device(ip)
+    np.pop("uri")
     if np["art"]:
         np["art"] = f"/api/art/now?ip={ip}&k={abs(hash(np['art'])) % 10**8}"
     return jsonify(np)
@@ -198,17 +265,16 @@ def art_now():
                     headers={"Cache-Control": "max-age=3600"})
 
 
-@app.post("/api/control")
-def control():
-    body = request.get_json()
-    ip, action = body["ip"], body["action"]
+def do_control(ip, action, value=None):
     d = device(ip)
     q = _queues.get(ip)
     if action in ("next", "prev") and q:
         with _lock:
             q.index = max(0, min(len(q.ids) - 1, q.index + (1 if action == "next" else -1)))
             start_track(ip, q)
-    elif action == "toggle":
+    elif action == "play":
+        d.resume()
+    elif action in ("toggle", "pause"):
         d.toggle()
     elif action == "next":
         d.next()
@@ -218,11 +284,18 @@ def control():
         _queues.pop(ip, None)
         d.stop()
     elif action == "seek":
-        d.seek(body["value"])
+        d.seek(value)
     elif action == "volume":
-        d.set_volume(body["value"])
+        d.set_volume(value)
     else:
         abort(400, "unknown action")
+
+
+@app.post("/api/control")
+def control():
+    body = request.get_json()
+    do_control(body["ip"], body["action"], body.get("value"))
+    set_last_device(body["ip"])
     return jsonify(ok=True)
 
 
@@ -236,6 +309,7 @@ def play():
     with _lock:
         _queues[ip] = q
         start_track(ip, q)
+    set_last_device(ip)
     return jsonify(ok=True)
 
 
@@ -308,4 +382,9 @@ def on_error(e):
 
 if __name__ == "__main__":
     threading.Thread(target=queue_watcher, daemon=True).start()
+    try:
+        from mpris import Bridge
+        Bridge(mpris_device, mpris_control, raise_window).start()
+    except Exception as e:                  # no session bus: the web app still works
+        app.logger.warning("mpris bridge not started: %s", e)
     app.run(host="0.0.0.0", port=PORT, threaded=True)
