@@ -19,6 +19,10 @@ music from a Plex server or Tidal on it.
   keyboard's play/pause, next and previous control it, and the desktop shows the
   track and artwork. The name is claimed only while a device has a track, so an
   idle WiiM Remote doesn't take the keys from other players.
+- **Tray icon:** a StatusNotifierItem whose tooltip names the current track.
+  Left click toggles a mini player (art, progress, transport, volume, served at
+  `/mini`); right click offers Open, Play/Pause and Quit. No GTK or appindicator
+  packages needed.
 
 ## How it works
 

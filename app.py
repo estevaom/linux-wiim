@@ -4,6 +4,7 @@ Run: .venv/bin/python app.py  (serves http://0.0.0.0:8765)
 Tokens stay in this process. The browser gets artwork through /api/art proxies,
 never a URL with a Plex token in it.
 """
+import os
 import re
 import subprocess
 import threading
@@ -219,10 +220,41 @@ def mpris_control(action, value=None):
         do_control(ip, action, value)
 
 
+# Chromium derives an app window's class from its URL and ignores --class, so this
+# is what a window opened on /mini ends up as. The Hyprland rule matches it too.
+MINI_CLASS = "chrome-127.0.0.1__mini-Default"
+
+
 def raise_window():
     """The desktop's "open the player" action: focus the web app, or start it."""
     subprocess.Popen(["omarchy-launch-or-focus-webapp", "WiiM Remote", f"http://127.0.0.1:{PORT}"],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def toggle_mini():
+    """Tray left click: show the mini player, or close it if it's already up."""
+    clients = subprocess.run(["hyprctl", "clients", "-j"], capture_output=True, text=True).stdout
+    if f'"{MINI_CLASS}"' in clients:
+        # hyprctl dispatch parses its argument as Lua on this build, and the
+        # dispatcher is hl.dsp.window.close — not the closewindow of the docs.
+        subprocess.run(["hyprctl", "dispatch", f'hl.dsp.window.close("class:{MINI_CLASS}")'],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        subprocess.Popen(["omarchy-launch-webapp", f"http://127.0.0.1:{PORT}/mini", "--window-size=340,470"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def tray_tooltip():
+    np = mpris_device()
+    if not np or not np.get("title"):
+        return "Nothing playing"
+    line = " — ".join(x for x in (np["title"], np.get("artist")) if x)
+    return f"{line}\n{_devices[np['ip']].name}" if np["ip"] in _devices else line
+
+
+def quit_app():
+    """Tray → Quit. Exiting cleanly keeps systemd from restarting it (Restart=on-failure)."""
+    os._exit(0)
 
 
 # --- pages ------------------------------------------------------------------------
@@ -230,6 +262,30 @@ def raise_window():
 @app.get("/")
 def index():
     return send_from_directory("static", "index.html")
+
+
+@app.get("/mini")
+def mini():
+    """Small player for the tray: album art, progress, transport."""
+    return send_from_directory("static", "mini.html")
+
+
+@app.get("/api/active")
+def active():
+    """Whatever the media keys and the mini player act on right now."""
+    np = mpris_device()
+    if not np:
+        return jsonify(ip=None, state="STOPPED", title="", art="", position=0, duration=0, volume=None)
+    np.pop("uri", None)
+    if np["art"]:
+        np["art"] = f"/api/art/now?ip={np['ip']}&k={abs(hash(np['art'])) % 10**8}"
+    return jsonify(np)
+
+
+@app.post("/api/open-full")
+def open_full():
+    raise_window()
+    return jsonify(ok=True)
 
 
 @app.get("/api/status")
@@ -387,4 +443,9 @@ if __name__ == "__main__":
         Bridge(mpris_device, mpris_control, raise_window).start()
     except Exception as e:                  # no session bus: the web app still works
         app.logger.warning("mpris bridge not started: %s", e)
+    try:
+        from tray import Tray
+        Tray(toggle_mini, raise_window, lambda: mpris_control("toggle"), quit_app, tray_tooltip).start()
+    except Exception as e:                  # no tray on this desktop: not fatal
+        app.logger.warning("tray icon not started: %s", e)
     app.run(host="0.0.0.0", port=PORT, threaded=True)

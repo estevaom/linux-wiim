@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WiiM</title>
+<link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+<style>
+:root { --bg: #0f0f12; --panel: #1f1f26; --line: #2a2a33; --text: #ecebf0; --muted: #7d7b88; --accent: #e6a23c; }
+@media (prefers-color-scheme: light) {
+  :root { --bg: #f6f5f2; --panel: #e7e5df; --line: #ddd9d0; --text: #1c1b20; --muted: #6b6975; --accent: #b87412; }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); overflow: hidden;
+       font: 13px/1.3 system-ui, -apple-system, "Segoe UI", sans-serif;
+       display: flex; flex-direction: column; gap: 10px; padding: 10px; }
+
+#art { flex: 1 1 auto; min-height: 0; border-radius: 12px; background: var(--panel) center/cover no-repeat;
+       cursor: pointer; position: relative; }
+#art::after { content: ""; position: absolute; inset: 0; border-radius: 12px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
+#art.idle { display: grid; place-items: center; }
+#art.idle::before { content: "♪"; font-size: 15vh; color: var(--line); }
+
+.bar { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums;
+       font-size: 11px; color: var(--muted); }
+.bar input { flex: 1; accent-color: var(--accent); background: none; border: 0; padding: 0; min-width: 0; }
+
+.controls { display: flex; align-items: center; justify-content: center; gap: 10px; }
+button { border: 0; background: none; color: inherit; cursor: pointer; display: grid; place-items: center;
+         width: 38px; height: 38px; border-radius: 50%; }
+button:hover { background: var(--panel); }
+button:disabled { opacity: .35; cursor: default; background: none; }
+#play { width: 46px; height: 46px; background: var(--accent); color: #111; }
+#play:hover { filter: brightness(1.1); }
+svg { width: 20px; height: 20px; fill: currentColor; }
+#play svg { width: 24px; height: 24px; }
+.vol { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.vol input { width: 74px; accent-color: var(--accent); background: none; border: 0; padding: 0; }
+</style>
+</head>
+<body>
+  <div id="art" class="idle" title="Open WiiM Remote"></div>
+  <div class="bar"><span id="pos">0:00</span><input id="seek" type="range" min="0" max="1" value="0" aria-label="Seek"><span id="dur">0:00</span></div>
+  <div class="controls">
+    <button id="prev" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+    <button id="play" aria-label="Play or pause"><svg viewBox="0 0 24 24" id="playIcon"><path d="M8 5v14l11-7z"/></svg></button>
+    <button id="next" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></button>
+    <span class="vol"><svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4z"/></svg>
+      <input id="vol" type="range" min="0" max="100" aria-label="Volume"></span>
+  </div>
+
+<script>
+const $ = s => document.querySelector(s);
+const PLAY = '<path d="M8 5v14l11-7z"/>', PAUSE = '<path d="M6 5h4v14H6zm8 0h4v14h-4z"/>';
+let np = null, at = 0, seeking = false, volDrag = false, lastArt = '';
+const fmt = s => { s = Math.max(0, Math.floor(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+
+async function poll() {
+  try {
+    const r = await fetch('/api/active');
+    np = await r.json();
+    at = performance.now();
+    const playing = np.state === 'PLAYING';
+    if (np.art !== lastArt) {
+      $('#art').style.backgroundImage = np.art ? `url("${np.art}")` : '';
+      $('#art').classList.toggle('idle', !np.art);
+      lastArt = np.art;
+    }
+    $('#playIcon').innerHTML = playing ? PAUSE : PLAY;
+    document.title = np.title ? `${np.title} — WiiM` : 'WiiM';
+    for (const id of ['prev', 'play', 'next', 'seek', 'vol']) $('#' + id).disabled = !np.ip;
+    if (!volDrag && np.volume != null) $('#vol').value = np.volume;
+    tick();
+  } catch { /* server restarting; next poll retries */ }
+}
+function tick() {
+  if (!np || seeking) return;
+  const elapsed = np.state === 'PLAYING' ? (performance.now() - at) / 1000 : 0;
+  const pos = Math.min(np.duration || 0, (np.position || 0) + elapsed);
+  $('#seek').max = np.duration || 1;
+  $('#seek').value = pos;
+  $('#pos').textContent = fmt(pos);
+  $('#dur').textContent = fmt(np.duration);
+}
+setInterval(poll, 2000); setInterval(tick, 500); poll();
+
+const control = (action, value) => fetch('/api/control', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ ip: np.ip, action, value })
+}).then(() => setTimeout(poll, 400));
+
+$('#play').onclick = () => control('toggle');
+$('#next').onclick = () => control('next');
+$('#prev').onclick = () => control('prev');
+$('#seek').oninput = e => { seeking = true; $('#pos').textContent = fmt(e.target.value); };
+$('#seek').onchange = e => { seeking = false; control('seek', +e.target.value); };
+$('#vol').oninput = () => { volDrag = true; };
+$('#vol').onchange = e => { volDrag = false; control('volume', +e.target.value); };
+$('#art').onclick = () => fetch('/api/open-full', { method: 'POST' });
+</script>
+</body>
+</html>
